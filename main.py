@@ -93,8 +93,10 @@ Helpline: 1800-180-1551 (Kisan Call Centre)"""
         )
         print(f"Twilio response status: {response.status_code}")
         print(f"Twilio response body: {response.text}")
-# ──────────────────────────────────────────────────────────────────────────
-
+        return True
+    except Exception as e:
+        print(f"WhatsApp error: {e}")
+        return False
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
