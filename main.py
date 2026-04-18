@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins="*", allow_headers=["Content-Type"], methods=["GET", "POST", "OPTIONS"])
 
 
 GROQ_KEY = os.environ.get("GROQ_KEY", "")
@@ -51,7 +51,12 @@ def call_groq(prompt, system):
         if text.startswith("json"):
             text = text[4:]
     return json.loads(text.strip())
-
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    return response
 @app.route("/farmer", methods=["POST"])
 def farmer():
     try:
