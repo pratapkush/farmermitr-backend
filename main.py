@@ -75,7 +75,7 @@ def farmer():
         )
 
         schemes = call_groq(
-            f"Farmer: crop={crop}, state={state}, land={land} acres, BPL={bpl}.\nReturn a JSON array of matching Indian government schemes. Each item: scheme_name, benefit_amount, eligibility_reason, how_to_apply, deadline_note",
+            f"Farmer: crop={crop}, state={state}, land={land} acres, BPL={bpl}.\nReturn a JSON array of matching Indian government schemes. Each item: scheme_name, benefit_amount, eligibility_reason, how_to_apply, deadline_note.Respond entirely in {language} language.",
             "You are a government scheme advisor for Indian farmers. Return a JSON array only. No markdown, no extra text."
         )
 
