@@ -1,14 +1,17 @@
-import os, requests, json
+import os, json
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app, origins="*", allow_headers=["Content-Type"], methods=["GET", "POST", "OPTIONS"])
 
-
-GROQ_KEY = os.environ.get("GROQ_KEY", "")
+GROQ_KEY   = os.environ.get("GROQ_KEY", "")
 TAVILY_KEY = os.environ.get("TAVILY_KEY", "")
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+TWILIO_SID   = os.environ.get("TWILIO_SID", "")
+TWILIO_TOKEN = os.environ.get("TWILIO_TOKEN", "")
+TWILIO_FROM  = os.environ.get("TWILIO_FROM", "whatsapp:+14155238886")
+GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions"
 
 def search_prices(crop, district, state):
     try:
@@ -51,21 +54,67 @@ def call_groq(prompt, system):
         if text.startswith("json"):
             text = text[4:]
     return json.loads(text.strip())
+
+# ── ADD THIS FUNCTION — sends WhatsApp via Twilio ──────────────────────────
+def send_whatsapp(phone, crop, district, price_data, schemes):
+    try:
+        price_range = price_data.get('current_price_range', 'N/A')
+        best_mandi  = price_data.get('best_mandi', 'N/A')
+        sell_advice = price_data.get('sell_advice', 'N/A')
+        trend       = price_data.get('price_trend', 'N/A')
+
+        scheme_lines = ""
+        for i, s in enumerate(schemes[:3], 1):
+            scheme_lines += f"\n{i}. {s.get('scheme_name','')}\n   Benefit: {s.get('benefit_amount','')}\n"
+
+        message = f"""FarmerMitr Report
+
+Crop: {crop} | District: {district}
+
+Today's Price
+Best Mandi: {best_mandi}
+Price Range: {price_range}
+Trend: {trend}
+Advice: {sell_advice}
+
+Government Schemes{scheme_lines}
+Visit your nearest CSC center for help applying.
+Helpline: 1800-180-1551 (Kisan Call Centre)"""
+
+        requests.post(
+            f'https://api.twilio.com/2010-04-01/Accounts/{TWILIO_SID}/Messages.json',
+            auth=(TWILIO_SID, TWILIO_TOKEN),
+            data={
+                'From': TWILIO_FROM,
+                'To':   f'whatsapp:+91{phone}',
+                'Body': message
+            },
+            timeout=10
+        )
+        print(f"WhatsApp sent to {phone}")
+        return True
+    except Exception as e:
+        print(f"WhatsApp error: {e}")
+        return False
+# ──────────────────────────────────────────────────────────────────────────
+
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
     response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     return response
+
 @app.route("/farmer", methods=["POST"])
 def farmer():
     try:
         d = request.get_json()
-        crop = d.get("crop", "wheat")
+        crop     = d.get("crop", "wheat")
         district = d.get("district", "")
-        state = d.get("state", "")
-        land = d.get("land_acres", "1")
-        bpl = d.get("bpl_card", "no")
+        state    = d.get("state", "")
+        land     = d.get("land_acres", "1")
+        bpl      = d.get("bpl_card", "no")
+        phone    = d.get("phone", "")
         language = d.get("language", "English")
 
         print(f"Request: crop={crop}, district={district}, state={state}")
@@ -80,9 +129,13 @@ def farmer():
         )
 
         schemes = call_groq(
-            f"Farmer: crop={crop}, state={state}, land={land} acres, BPL={bpl}.\nReturn a JSON array of matching Indian government schemes. Each item: scheme_name, benefit_amount, eligibility_reason, how_to_apply, deadline_note.Respond entirely in {language} language.",
+            f"Farmer: crop={crop}, state={state}, land={land} acres, BPL={bpl}.\nReturn a JSON array of matching Indian government schemes. Each item: scheme_name, benefit_amount, eligibility_reason, how_to_apply, deadline_note. Respond entirely in {language} language.",
             "You are a government scheme advisor for Indian farmers. Return a JSON array only. No markdown, no extra text."
         )
+
+        # ── SEND WHATSAPP ──────────────────────────────────────────────────
+        send_whatsapp(phone, crop, district, price_data, schemes)
+        # ──────────────────────────────────────────────────────────────────
 
         return jsonify({
             "success": True,
@@ -98,7 +151,7 @@ def farmer():
 
 @app.route("/")
 def home():
-    return f"FarmerMitr backend is running. GROQ_KEY set: {bool(GROQ_KEY)}, TAVILY_KEY set: {bool(TAVILY_KEY)}"
+    return f"FarmerMitr backend is running. GROQ_KEY set: {bool(GROQ_KEY)}, TAVILY_KEY set: {bool(TAVILY_KEY)}, TWILIO_SID set: {bool(TWILIO_SID)}"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
