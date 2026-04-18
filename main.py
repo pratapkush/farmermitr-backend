@@ -81,21 +81,18 @@ Government Schemes{scheme_lines}
 Visit your nearest CSC center for help applying.
 Helpline: 1800-180-1551 (Kisan Call Centre)"""
 
-        requests.post(
+        response = requests.post(
             f'https://api.twilio.com/2010-04-01/Accounts/{TWILIO_SID}/Messages.json',
             auth=(TWILIO_SID, TWILIO_TOKEN),
             data={
                 'From': TWILIO_FROM,
-                'To':   f'whatsapp:+91{phone}',
+                'To':   f'whatsapp:+91{phone.strip()}',
                 'Body': message
             },
             timeout=10
         )
-        print(f"WhatsApp sent to {phone}")
-        return True
-    except Exception as e:
-        print(f"WhatsApp error: {e}")
-        return False
+        print(f"Twilio response status: {response.status_code}")
+        print(f"Twilio response body: {response.text}")
 # ──────────────────────────────────────────────────────────────────────────
 
 @app.after_request
