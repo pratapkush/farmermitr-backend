@@ -5,6 +5,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
+
 GROQ_KEY = os.environ.get("GROQ_KEY", "")
 TAVILY_KEY = os.environ.get("TAVILY_KEY", "")
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -60,6 +61,7 @@ def farmer():
         state = d.get("state", "")
         land = d.get("land_acres", "1")
         bpl = d.get("bpl_card", "no")
+        language = d.get("language", "English")
 
         print(f"Request: crop={crop}, district={district}, state={state}")
         print(f"GROQ_KEY present: {bool(GROQ_KEY)}, TAVILY_KEY present: {bool(TAVILY_KEY)}")
@@ -68,7 +70,7 @@ def farmer():
         print(f"Price text length: {len(price_text)}")
 
         price_data = call_groq(
-            f"Crop: {crop}, District: {district}, State: {state}, Land: {land} acres.\nMarket data: {price_text}\nReturn JSON only with keys: current_price_range, msp_2024, sell_advice, best_mandi, price_trend, action_urgency",
+            f"Crop: {crop}, District: {district}, State: {state}, Land: {land} acres.\nMarket data: {price_text}\nReturn JSON only with keys: current_price_range, msp_2024, sell_advice, best_mandi, price_trend, action_urgency.\nRespond entirely in {language} language.",
             "You are FarmerMitr. Return valid JSON only. No markdown, no extra text."
         )
 
