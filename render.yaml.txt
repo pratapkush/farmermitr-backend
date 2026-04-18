@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: farmermitr
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn main:app
+    envVars:
+      - key: GROQ_KEY
+        sync: false
+      - key: TAVILY_KEY
+        sync: false
