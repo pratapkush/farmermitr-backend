@@ -1,0 +1,68 @@
+import os, requests
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)
+
+GROQ_KEY = os.environ.get("GROQ_KEY", "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")
+TAVILY_KEY = os.environ.get("TAVILY_KEY", "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")
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_HEADERS = {"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
+
+def search_prices(crop, district, state):
+    r = requests.post("https://api.tavily.com/search", json={
+        "api_key": TAVILY_KEY,
+        "query": f"{crop} mandi price today {district} {state} APMC",
+        "search_depth": "basic", "max_results": 5
+    })
+    results = r.json().get("results", [])
+    return " ".join([x.get("content", "") for x in results])
+
+def get_price_advice(crop, district, state, land, price_text):
+    body = {"model": "llama3-8b-8192", "max_tokens": 600,
+        "messages": [
+            {"role": "system", "content": "You are FarmerMitr. Return valid JSON only. No other text."},
+            {"role": "user", "content": f"""Crop: {crop}, District: {district}, State: {state}, Land: {land} acres.
+Market data: {price_text[:1500]}
+Return JSON with: current_price_range, msp_2024, sell_advice, best_mandi, price_trend, action_urgency"""}
+        ]}
+    r = requests.post(GROQ_URL, headers=GROQ_HEADERS, json=body)
+    import json
+    text = r.json()["choices"][0]["message"]["content"]
+    text = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    return json.loads(text)
+
+def get_schemes(crop, state, land, bpl):
+    body = {"model": "llama3-8b-8192", "max_tokens": 800,
+        "messages": [
+            {"role": "system", "content": "You are a government scheme advisor. Return a JSON array only. No other text."},
+            {"role": "user", "content": f"""Farmer: crop={crop}, state={state}, land={land} acres, BPL card={bpl}.
+Return JSON array. Each item: scheme_name, benefit_amount, eligibility_reason, how_to_apply, deadline_note"""}
+        ]}
+    r = requests.post(GROQ_URL, headers=GROQ_HEADERS, json=body)
+    import json
+    text = r.json()["choices"][0]["message"]["content"]
+    text = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    return json.loads(text)
+
+@app.route("/farmer", methods=["POST"])
+def farmer():
+    d = request.get_json()
+    crop = d.get("crop", "")
+    district = d.get("district", "")
+    state = d.get("state", "")
+    land = d.get("land_acres", "1")
+    bpl = d.get("bpl_card", "no")
+    price_text = search_prices(crop, district, state)
+    price_data = get_price_advice(crop, district, state, land, price_text)
+    schemes = get_schemes(crop, state, land, bpl)
+    return jsonify({"success": True, "crop": crop, "district": district,
+                    "price_data": price_data, "schemes": schemes})
+
+@app.route("/")
+def home():
+    return "FarmerMitr backend is running."
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
