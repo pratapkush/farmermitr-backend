@@ -40,7 +40,18 @@ def call_groq(prompt, system):
             {"role": "user", "content": prompt}
         ]
     }
-    r = requests.post(GROQ_URL, headers=headers, json=body, timeout=30)
+
+    # ── FIX 3: Retry logic — tries up to 3 times on timeout ───────────────
+    for attempt in range(3):
+        try:
+            r = requests.post(GROQ_URL, headers=headers, json=body, timeout=30)
+            break
+        except requests.Timeout:
+            if attempt == 2:
+                raise Exception("Groq timed out after 3 attempts. Please try again.")
+            print(f"Groq timeout attempt {attempt+1}, retrying...")
+    # ─────────────────────────────────────────────────────────────────────
+
     raw = r.json()
 
     if "choices" not in raw:
@@ -48,7 +59,6 @@ def call_groq(prompt, system):
 
     text = raw["choices"][0]["message"]["content"].strip()
 
-    # ── FIXED JSON EXTRACTION ─────────────────────────────────────────────
     # Strip markdown code fences
     if "```" in text:
         parts = text.split("```")
@@ -62,15 +72,13 @@ def call_groq(prompt, system):
     obj_start = text.find("{")
 
     if arr_start != -1 and (obj_start == -1 or arr_start < obj_start):
-        # It's a JSON array
         end = text.rfind("]") + 1
         text = text[arr_start:end]
     elif obj_start != -1:
-        # It's a JSON object
         end = text.rfind("}") + 1
         text = text[obj_start:end]
 
-    # Remove any control characters that break JSON parsing
+    # Remove control characters that break JSON parsing in non-English languages
     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
 
     try:
@@ -78,8 +86,7 @@ def call_groq(prompt, system):
     except json.JSONDecodeError as e:
         print(f"JSON parse failed: {e}")
         print(f"Problematic text: {text[:300]}")
-        raise Exception(f"Could not parse AI response. Please try again.")
-    # ─────────────────────────────────────────────────────────────────────
+        raise Exception("Could not parse AI response. Please try again.")
 
 def send_whatsapp(phone, crop, district, price_data, schemes):
     try:
@@ -134,9 +141,21 @@ def after_request(response):
 def farmer():
     try:
         d = request.get_json()
-        crop     = d.get("crop", "wheat")
-        district = d.get("district", "")
-        state    = d.get("state", "")
+
+        # ── FIX 4: Validate required fields ──────────────────────────────
+        if not d:
+            return jsonify({"success": False, "error": "No data received. Please try again."}), 400
+        if not d.get("crop", "").strip():
+            return jsonify({"success": False, "error": "Crop name is required."}), 400
+        if not d.get("state", "").strip():
+            return jsonify({"success": False, "error": "State is required."}), 400
+        if not d.get("district", "").strip():
+            return jsonify({"success": False, "error": "District is required."}), 400
+        # ─────────────────────────────────────────────────────────────────
+
+        crop     = d.get("crop", "wheat").strip()
+        district = d.get("district", "").strip()
+        state    = d.get("state", "").strip()
         land     = d.get("land_acres", "1")
         bpl      = d.get("bpl_card", "no")
         phone    = d.get("phone", "")
