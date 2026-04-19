@@ -1,4 +1,4 @@
-import os, json
+import os, json, re
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -6,12 +6,12 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app, origins="*", allow_headers=["Content-Type"], methods=["GET", "POST", "OPTIONS"])
 
-GROQ_KEY   = os.environ.get("GROQ_KEY", "")
-TAVILY_KEY = os.environ.get("TAVILY_KEY", "")
+GROQ_KEY     = os.environ.get("GROQ_KEY", "")
+TAVILY_KEY   = os.environ.get("TAVILY_KEY", "")
 TWILIO_SID   = os.environ.get("TWILIO_SID", "")
 TWILIO_TOKEN = os.environ.get("TWILIO_TOKEN", "")
 TWILIO_FROM  = os.environ.get("TWILIO_FROM", "whatsapp:+14155238886")
-GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
 
 def search_prices(crop, district, state):
     try:
@@ -42,20 +42,45 @@ def call_groq(prompt, system):
     }
     r = requests.post(GROQ_URL, headers=headers, json=body, timeout=30)
     raw = r.json()
-    print(f"Groq raw response: {raw}")
 
     if "choices" not in raw:
         raise Exception(f"Groq error: {raw.get('error', {}).get('message', str(raw))}")
 
     text = raw["choices"][0]["message"]["content"].strip()
+
+    # ── FIXED JSON EXTRACTION ─────────────────────────────────────────────
+    # Strip markdown code fences
     if "```" in text:
         parts = text.split("```")
         text = parts[1] if len(parts) > 1 else parts[0]
         if text.startswith("json"):
             text = text[4:]
-    return json.loads(text.strip())
+    text = text.strip()
 
-# ── ADD THIS FUNCTION — sends WhatsApp via Twilio ──────────────────────────
+    # Extract only the JSON part — ignore any text before/after
+    arr_start = text.find("[")
+    obj_start = text.find("{")
+
+    if arr_start != -1 and (obj_start == -1 or arr_start < obj_start):
+        # It's a JSON array
+        end = text.rfind("]") + 1
+        text = text[arr_start:end]
+    elif obj_start != -1:
+        # It's a JSON object
+        end = text.rfind("}") + 1
+        text = text[obj_start:end]
+
+    # Remove any control characters that break JSON parsing
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        print(f"JSON parse failed: {e}")
+        print(f"Problematic text: {text[:300]}")
+        raise Exception(f"Could not parse AI response. Please try again.")
+    # ─────────────────────────────────────────────────────────────────────
+
 def send_whatsapp(phone, crop, district, price_data, schemes):
     try:
         price_range = price_data.get('current_price_range', 'N/A')
@@ -97,6 +122,7 @@ Helpline: 1800-180-1551 (Kisan Call Centre)"""
     except Exception as e:
         print(f"WhatsApp error: {e}")
         return False
+
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -116,8 +142,7 @@ def farmer():
         phone    = d.get("phone", "")
         language = d.get("language", "English")
 
-        print(f"Request: crop={crop}, district={district}, state={state}")
-        print(f"GROQ_KEY present: {bool(GROQ_KEY)}, TAVILY_KEY present: {bool(TAVILY_KEY)}")
+        print(f"Request: crop={crop}, district={district}, state={state}, language={language}")
 
         price_text = search_prices(crop, district, state)
         print(f"Price text length: {len(price_text)}")
@@ -132,9 +157,7 @@ def farmer():
             "You are a government scheme advisor for Indian farmers. Return a JSON array only. No markdown, no extra text."
         )
 
-        # ── SEND WHATSAPP ──────────────────────────────────────────────────
         send_whatsapp(phone, crop, district, price_data, schemes)
-        # ──────────────────────────────────────────────────────────────────
 
         return jsonify({
             "success": True,
